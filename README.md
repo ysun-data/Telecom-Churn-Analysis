@@ -1,6 +1,6 @@
 # Customer Churn Prediction: From Model Comparison to Business Action
  
-> A telecom company loses a customer every time someone cancels their plan. This project builds a system to predict who's at risk, figures out which model to actually trust, and answers the question most analyses skip: *when exactly should you intervene, and at what cost?*
+> A telecom company loses a customer every time someone cancels their plan. This project compares six predictive models to find which one to actually trust, uncovers the patterns that separate churners from loyal customers, and answers the question most analyses skip: when exactly should you intervene, and at what cost?
  
 ---
 ## What This Project Does
@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | 📊 **Compared 6 models** | From logistic regression to gradient boosting — does complexity actually pay off? |
-| 💡 **Found what drives churn** | A small set of variables does most of the work |
+| 💡 **Identified churn patterns** | Churners share a distinct set of characteristics across both simple and complex models |
 | 💰 **Optimized the intervention threshold** | Because missing a churner and over-alerting both cost money |
 | 🔍 **Explained individual predictions** | Using SHAP to open the black box |
  
@@ -19,8 +19,8 @@ Telecom companies spend **$500–800 to acquire a new customer**. Keeping an exi
  
 The challenge is that you can't reach out to everyone. You need a model that tells you *who* is at risk, and a strategy that tells you *when* the math makes sense to act.
  
-This project works through that problem in three steps: find the right model, understand what's driving churn, and figure out the best moment to intervene.
- 
+This project works through that problem in four steps: pick the right model, understand what churners have in common, optimize the intervention threshold, and explain individual predictions. 
+
 ---
 ## The Data
  
@@ -31,6 +31,7 @@ The dataset comes from IBM's Telco Customer Churn dataset (via Kaggle). Each row
 - **What they use** — internet service type, streaming, tech support, online security
 - **How they pay** — contract type, payment method, monthly and total charges
 - **How long they've stayed** — tenure (in months)
+  
 The churn rate of 26.6% reflects real-world distribution — most customers don't leave — so the dataset is moderately imbalanced. This is intentional: fixing it artificially would make the model less useful in practice.
  
 Three numeric variables stood out immediately in EDA:
@@ -76,7 +77,14 @@ boxplot(TotalCharges ~ Churn, data = mydata,
 
 The most common mistake in ML projects is assuming that a more complex model is always better. This project tests that assumption directly.
 
-Six models were trained on a 70/30 train-test split, with **10-fold cross-validation** used to tune each model's parameters. The main metric is **AUC** — a measure of how well a model separates churners from non-churners, regardless of where you set the decision threshold. An AUC of 1.0 is perfect; 0.5 is a coin flip.
+Six models were trained across three categories — **linear** (logistic regression, LASSO), **nonlinear** (single tree, KNN), and **ensemble** (random forest, boosting) — to cover the full spectrum from simple to complex. 
+
+All were trained on a 70/30 train-test split, with **10-fold cross-validation** used to tune each model's parameters.
+ 
+Three metrics were used to evaluate performance:
+- **AUC** — how well the model separates churners from non-churners, regardless of where you set the decision threshold. An AUC of 1.0 is perfect; 0.5 is a coin flip.
+- **Sensitivity** — of all customers who actually churned, what fraction did the model catch?
+- **Specificity** — of all customers who stayed, what fraction did the model correctly leave alone?
 
 <details>
 <summary>📂 Show model training code</summary>
@@ -154,6 +162,8 @@ Boosting comes out on top, but only by **0.003 AUC over logistic regression** �
 
 *The confidence intervals overlap heavily. No model clearly dominates.*
 
+However, sensitivity across all models hovers around 0.50 — meaning at the default threshold, roughly half of actual churners are missed entirely. This is exactly the problem that Step 3 addresses.
+
 **The takeaway:**  
 When the data structure is relatively simple — driven by a few strong signals — a transparent logistic regression keeps up with the most sophisticated ensemble methods. For a production system where interpretability and maintenance cost matter, that's the practical winner.
 
@@ -190,11 +200,14 @@ summary(diff(resamp))
 </details>
 ---
  
-## Step 2 — What Actually Drives Churn?
+## Step 2 — What Do Churners Have in Common?
  
-Before deciding who to target, it helps to understand *why* customers leave. Two complementary approaches were used: **relative influence from boosting** (which variables matter most) and **coefficients from logistic regression** (in which direction they matter).
+Before deciding who to target, it helps to understand *why* customers leave. 
+
+Two complementary approaches were used: **relative influence from boosting** (which variables matter most) and **coefficients from logistic regression** (in which direction they matter).
  
-![Churn rate by contract type, internet service, and payment method](figures/fig3_churn_by_category.png)
+<img width="80%"  alt="image" src="https://github.com/user-attachments/assets/b305aec0-4608-4fb2-82f4-19c7d585a816" />
+
 *Month-to-month customers churn at 43% — nearly 15× the rate of two-year contract holders.*
  
 ### What both models agree on
@@ -232,6 +245,7 @@ Knowing *who* might churn is only half the problem. The other half is deciding *
  
 - **Missing a churner (false negative):** the customer leaves, costing ~**$200** in lost lifetime value
 - **Flagging a non-churner (false positive):** you send a retention offer to someone who wasn't leaving, costing ~**$20**
+
 Because these costs are asymmetric — a missed churner is 10× more expensive than a false alarm — the default decision threshold of 0.5 is not optimal. Lowering the threshold means flagging more people as at-risk, which catches more real churners at the cost of more unnecessary outreach.
  
 The question is: where exactly should we draw the line?
@@ -286,6 +300,8 @@ default_cost   <- cost_at_threshold(0.5, log_prob2,
 ---
  
 ## Step 4 — Why Is This Customer Flagged? (SHAP)
+ 
+Step 2 showed what churners have in common at the population level — patterns across the whole dataset. SHAP goes one level deeper: it explains how each feature affects each *individual* prediction, showing not just what matters on average but how much it mattered for a specific customer.
  
 AUC tells you how good a model is overall. But when a model flags a specific customer as high risk, a business needs to know *why* — both to act on it intelligently and to trust the model enough to use it.
  
